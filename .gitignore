@@ -1,0 +1,29 @@
+node_modules
+.DS_Store
+dist
+dist-ssr
+*.local
+*.tsbuildinfo
+.env
+.env.production
+.nitro
+.tanstack
+.wrangler
+.output
+.vinxi
+__unconfig*
+
+# Playwright
+test-results
+playwright-report
+blob-report
+playwright
+
+# VS Code settings
+.vscode/
+
+# Kilo settings
+.kilo/
+
+# WebAssembly build artifacts
+*.wasm

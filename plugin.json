@@ -1,0 +1,132 @@
+{
+  "id": "com.paca.webhook",
+  "displayName": "Webhooks",
+  "description": "Sends HTTP webhooks to a URL of your choice when task activity happens in a project.",
+  "version": "0.1.0",
+  "permissions": ["db.read", "db.write", "events.subscribe"],
+  "backend": {
+    "allowedConfigKeys": ["ENCRYPTION_KEY", "PUBLIC_URL"],
+    "allowedOutboundDomains": ["*"],
+    "eventSubscriptions": [
+      "task.created",
+      "task.updated",
+      "task.deleted",
+      "task.attachment.added",
+      "task.attachment.removed",
+      "comment",
+      "task.link.added",
+      "task.link.removed",
+      "agent.session.started",
+      "task.comment.added",
+      "task.comment.updated",
+      "task.comment.deleted"
+    ],
+    "routes": [
+      {
+        "method": "GET",
+        "path": "/projects/:projectId/webhooks",
+        "middlewares": [
+          { "name": "optionalAuthn" },
+          { "name": "requireFreshPassword" },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": ["projects.read"]
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/projects/:projectId/webhooks",
+        "middlewares": [
+          { "name": "optionalAuthn" },
+          { "name": "requireFreshPassword" },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": ["projects.write"]
+          }
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/projects/:projectId/webhooks/:webhookId",
+        "middlewares": [
+          { "name": "optionalAuthn" },
+          { "name": "requireFreshPassword" },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": ["projects.read"]
+          }
+        ]
+      },
+      {
+        "method": "PATCH",
+        "path": "/projects/:projectId/webhooks/:webhookId",
+        "middlewares": [
+          { "name": "optionalAuthn" },
+          { "name": "requireFreshPassword" },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": ["projects.write"]
+          }
+        ]
+      },
+      {
+        "method": "DELETE",
+        "path": "/projects/:projectId/webhooks/:webhookId",
+        "middlewares": [
+          { "name": "optionalAuthn" },
+          { "name": "requireFreshPassword" },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": ["projects.write"]
+          }
+        ]
+      },
+      {
+        "method": "GET",
+        "path": "/projects/:projectId/webhooks/:webhookId/deliveries",
+        "middlewares": [
+          { "name": "optionalAuthn" },
+          { "name": "requireFreshPassword" },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": ["projects.read"]
+          }
+        ]
+      },
+      {
+        "method": "POST",
+        "path": "/projects/:projectId/webhooks/:webhookId/test",
+        "middlewares": [
+          { "name": "optionalAuthn" },
+          { "name": "requireFreshPassword" },
+          {
+            "name": "requirePermissions",
+            "scope": "project",
+            "permissions": ["projects.write"]
+          }
+        ]
+      }
+    ]
+  },
+  "frontend": {
+    "remoteEntryUrl": "/plugins/com.paca.webhook/assets/remoteEntry.js",
+    "extensionPoints": [
+      {
+        "point": "project.settings.tab",
+        "component": "WebhookSettingsTab",
+        "label": "Webhooks",
+        "order": 110
+      }
+    ]
+  },
+  "mcp": {
+    "remoteEntryUrl": "/plugins-mcp/com.paca.webhook/mcp.js"
+  }
+}
