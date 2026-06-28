@@ -503,10 +503,7 @@ func (p *webhookPlugin) buildEventData(topic string, payload map[string]any) (ma
 			Title string `json:"title"`
 		}
 		_ = json.Unmarshal([]byte(rawContent), &c)
-		if c.Title == "" {
-			return map[string]any{}, fmt.Sprintf("%s created a task", actor)
-		}
-		return map[string]any{"title": c.Title}, fmt.Sprintf("%s created a task: %q", actor, c.Title)
+		return map[string]any{"title": c.Title}, fmt.Sprintf("%s created %s", actor, p.taskRef(payload))
 
 	case "task.updated":
 		ref := p.taskRef(payload)
@@ -635,19 +632,46 @@ func (p *webhookPlugin) lookupName(sqlStr, param string) string {
 	return newRowScanner(result.Columns, result.Rows[0]).str("name")
 }
 
-// taskRef returns a quoted reference to the task ("task \"Fix login bug\"")
-// for use in a summary line, falling back to "a task" when the title can't
-// be resolved (e.g. task_id missing from the payload).
+// taskRef returns a quoted reference to the task, prefixed with its
+// human-readable alias when the project has a task ID prefix configured
+// (e.g. `task ABC-123 "Fix login bug"`), falling back to "a task" when the
+// title can't be resolved (e.g. task_id missing from the payload).
 func (p *webhookPlugin) taskRef(payload map[string]any) string {
 	taskID, _ := payload["task_id"].(string)
 	if taskID == "" {
 		return "a task"
 	}
-	title := p.lookupName(`SELECT title AS name FROM tasks WHERE id = $1`, taskID)
+	result, err := p.db.Query(`SELECT title, task_number, project_id FROM tasks WHERE id = $1`, taskID)
+	if err != nil || len(result.Rows) == 0 {
+		return "a task"
+	}
+	sc := newRowScanner(result.Columns, result.Rows[0])
+	title := sc.str("title")
 	if title == "" {
 		return "a task"
 	}
+	if alias := p.taskAlias(sc.str("project_id"), sc.intVal("task_number")); alias != "" {
+		return fmt.Sprintf("task %s %q", alias, title)
+	}
 	return fmt.Sprintf("task %q", title)
+}
+
+// taskAlias formats a task's human-readable alias (e.g. "ABC-123") from its
+// project's task_id_prefix and the task's sequential task_number, or ""
+// when the project has no prefix configured or the task number is unset.
+func (p *webhookPlugin) taskAlias(projectID string, taskNumber int) string {
+	if projectID == "" || taskNumber <= 0 {
+		return ""
+	}
+	result, err := p.db.Query(`SELECT task_id_prefix FROM projects WHERE id = $1`, projectID)
+	if err != nil || len(result.Rows) == 0 {
+		return ""
+	}
+	prefix := newRowScanner(result.Columns, result.Rows[0]).str("task_id_prefix")
+	if prefix == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s-%d", prefix, taskNumber)
 }
 
 // blockContentToText converts a field-change value (decoded from JSON into
@@ -701,6 +725,16 @@ func extractBlockText(raw string) string {
 	return ""
 }
 
+// projectName resolves the display name of the event's project, or "" when
+// project_id is missing from the payload or doesn't match a project.
+func (p *webhookPlugin) projectName(payload map[string]any) string {
+	projectID, _ := payload["project_id"].(string)
+	if projectID == "" {
+		return ""
+	}
+	return p.lookupName(`SELECT name FROM projects WHERE id = $1`, projectID)
+}
+
 // taskURL builds a link to the task on the Paca web app, using the host's
 // PUBLIC_URL config value. Returns "" when PUBLIC_URL isn't configured or
 // the event has no task_id/project_id (e.g. webhook.test).
@@ -725,6 +759,10 @@ func (p *webhookPlugin) deliver(sc *scanner, eventType string, payload map[strin
 	targetURL := sc.str("url")
 
 	data, text := p.buildEventData(eventType, payload)
+	if pname := p.projectName(payload); pname != "" {
+		data["project_name"] = pname
+		text = fmt.Sprintf("[%s] %s", pname, text)
+	}
 	if url := p.taskURL(payload); url != "" {
 		data["url"] = url
 		text = text + " - " + url

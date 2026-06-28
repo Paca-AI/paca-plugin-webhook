@@ -197,3 +197,43 @@ func TestActivityEventDispatchSkipsUnsubscribed(t *testing.T) {
 		t.Fatal("expected delivery to fail outside WASM runtime")
 	}
 }
+
+// TestTaskRefAndProjectNameInSummaryText verifies that the human-readable
+// "text" summary built for a delivery includes the task's alias (project
+// task_id_prefix + task_number, e.g. "ABC-123") and is prefixed with the
+// project name.
+func TestTaskRefAndProjectNameInSummaryText(t *testing.T) {
+	p, tc := setupPlugin(t)
+
+	tc.DB.SeedRows("projects",
+		[]string{"id", "name", "task_id_prefix"},
+		[][]any{{testProjectID, "Website Redesign", "ABC"}})
+	tc.DB.SeedRows("tasks",
+		[]string{"id", "title", "task_number", "project_id"},
+		[][]any{{"task-1", "Fix login bug", 123, testProjectID}})
+
+	payload := map[string]any{
+		"project_id": testProjectID,
+		"task_id":    "task-1",
+	}
+
+	if got, want := p.taskRef(payload), `task ABC-123 "Fix login bug"`; got != want {
+		t.Fatalf("taskRef = %q, want %q", got, want)
+	}
+	if got, want := p.projectName(payload), "Website Redesign"; got != want {
+		t.Fatalf("projectName = %q, want %q", got, want)
+	}
+
+	_, text := p.buildEventData("task.deleted", payload)
+	if want := `Someone deleted task ABC-123 "Fix login bug"`; text != want {
+		t.Fatalf("buildEventData text = %q, want %q", text, want)
+	}
+
+	// A project with no task_id_prefix configured falls back to no alias.
+	tc.DB.SeedRows("projects",
+		[]string{"id", "name", "task_id_prefix"},
+		[][]any{{testProjectID, "Website Redesign", ""}})
+	if got, want := p.taskRef(payload), `task "Fix login bug"`; got != want {
+		t.Fatalf("taskRef with no prefix = %q, want %q", got, want)
+	}
+}
