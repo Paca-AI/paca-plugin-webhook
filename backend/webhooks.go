@@ -487,15 +487,32 @@ type fieldChange struct {
 	New   any    `json:"new"`
 }
 
+// deliveryMeta carries the actor and task-alias identifiers resolved while
+// building a delivery's "text" summary, so deliver() can attach them to the
+// outbound payload as structured fields (the API previously only embedded
+// them in the prose "text" line).
+type deliveryMeta struct {
+	ActorID   string
+	ActorName string
+	ActorType string // "user" or "agent", "" when no actor on the event
+	TaskAlias string // e.g. "ABC-123", "" when unset/unconfigured
+}
+
 // buildEventData decodes the activity's topic-specific "content" JSON (a
 // string, as recorded by the activity log) into a structured "data" object
 // for the delivery payload, and builds a short human-readable summary line —
 // prefixed with the actor's name — for the envelope's "text" field. Each
 // topic has its own content shape, so dispatch on topic rather than trying
 // to interpret it generically.
-func (p *webhookPlugin) buildEventData(topic string, payload map[string]any) (map[string]any, string) {
+func (p *webhookPlugin) buildEventData(topic string, payload map[string]any) (map[string]any, string, deliveryMeta) {
 	rawContent, _ := payload["content"].(string)
-	actor := p.actorName(topic, payload)
+	actor, actorID, actorType := p.resolveActor(topic, payload)
+	meta := deliveryMeta{
+		ActorID:   actorID,
+		ActorName: actor,
+		ActorType: actorType,
+		TaskAlias: p.taskAliasForPayload(payload),
+	}
 
 	switch topic {
 	case "task.created":
@@ -503,7 +520,7 @@ func (p *webhookPlugin) buildEventData(topic string, payload map[string]any) (ma
 			Title string `json:"title"`
 		}
 		_ = json.Unmarshal([]byte(rawContent), &c)
-		return map[string]any{"title": c.Title}, fmt.Sprintf("%s created %s", actor, p.taskRef(payload))
+		return map[string]any{"title": c.Title}, fmt.Sprintf("%s created %s", actor, p.taskRef(payload)), meta
 
 	case "task.updated":
 		ref := p.taskRef(payload)
@@ -512,7 +529,7 @@ func (p *webhookPlugin) buildEventData(topic string, payload map[string]any) (ma
 		}
 		_ = json.Unmarshal([]byte(rawContent), &c)
 		if len(c.Changes) == 0 {
-			return map[string]any{"changes": []fieldChange{}}, fmt.Sprintf("%s updated %s", actor, ref)
+			return map[string]any{"changes": []fieldChange{}}, fmt.Sprintf("%s updated %s", actor, ref), meta
 		}
 		parts := make([]string, 0, len(c.Changes))
 		for i, ch := range c.Changes {
@@ -529,10 +546,10 @@ func (p *webhookPlugin) buildEventData(topic string, payload map[string]any) (ma
 			}
 			parts = append(parts, fmt.Sprintf("%s: %v → %v", ch.Field, ch.Old, ch.New))
 		}
-		return map[string]any{"changes": c.Changes}, fmt.Sprintf("%s updated %s — %s", actor, ref, strings.Join(parts, ", "))
+		return map[string]any{"changes": c.Changes}, fmt.Sprintf("%s updated %s — %s", actor, ref, strings.Join(parts, ", ")), meta
 
 	case "task.deleted":
-		return map[string]any{}, fmt.Sprintf("%s deleted %s", actor, p.taskRef(payload))
+		return map[string]any{}, fmt.Sprintf("%s deleted %s", actor, p.taskRef(payload)), meta
 
 	case "task.link.added":
 		ref := p.taskRef(payload)
@@ -542,18 +559,18 @@ func (p *webhookPlugin) buildEventData(topic string, payload map[string]any) (ma
 		}
 		_ = json.Unmarshal([]byte(rawContent), &c)
 		return map[string]any{"target_task_id": c.TargetTaskID, "link_type": c.LinkType},
-			fmt.Sprintf("%s linked %s to %s (%s)", actor, ref, c.TargetTaskID, c.LinkType)
+			fmt.Sprintf("%s linked %s to %s (%s)", actor, ref, c.TargetTaskID, c.LinkType), meta
 
 	case "task.link.removed":
 		var c struct {
 			LinkID string `json:"link_id"`
 		}
 		_ = json.Unmarshal([]byte(rawContent), &c)
-		return map[string]any{"link_id": c.LinkID}, fmt.Sprintf("%s removed a link from %s", actor, p.taskRef(payload))
+		return map[string]any{"link_id": c.LinkID}, fmt.Sprintf("%s removed a link from %s", actor, p.taskRef(payload)), meta
 
 	case "task.comment.deleted":
 		commentID, _ := payload["id"].(string)
-		return map[string]any{"comment_id": commentID}, fmt.Sprintf("%s deleted a comment on %s", actor, p.taskRef(payload))
+		return map[string]any{"comment_id": commentID}, fmt.Sprintf("%s deleted a comment on %s", actor, p.taskRef(payload)), meta
 
 	case "task.comment.added", "task.comment.updated", "comment":
 		ref := p.taskRef(payload)
@@ -561,9 +578,9 @@ func (p *webhookPlugin) buildEventData(topic string, payload map[string]any) (ma
 		text := extractBlockText(rawContent)
 		data := map[string]any{"comment_id": commentID, "text": text}
 		if topic == "task.comment.updated" {
-			return data, fmt.Sprintf("%s updated a comment on %s", actor, ref)
+			return data, fmt.Sprintf("%s updated a comment on %s", actor, ref), meta
 		}
-		return data, fmt.Sprintf("%s commented on %s", actor, ref)
+		return data, fmt.Sprintf("%s commented on %s", actor, ref), meta
 
 	case "agent.session.started":
 		var c struct {
@@ -572,41 +589,43 @@ func (p *webhookPlugin) buildEventData(topic string, payload map[string]any) (ma
 		}
 		_ = json.Unmarshal([]byte(rawContent), &c)
 		return map[string]any{"conversation_id": c.ConversationID, "agent_id": c.AgentID},
-			fmt.Sprintf("%s started an agent session on %s", actor, p.taskRef(payload))
+			fmt.Sprintf("%s started an agent session on %s", actor, p.taskRef(payload)), meta
 
 	case "task.attachment.added":
-		return map[string]any{}, fmt.Sprintf("%s added an attachment to %s", actor, p.taskRef(payload))
+		return map[string]any{}, fmt.Sprintf("%s added an attachment to %s", actor, p.taskRef(payload)), meta
 
 	case "task.attachment.removed":
-		return map[string]any{}, fmt.Sprintf("%s removed an attachment from %s", actor, p.taskRef(payload))
+		return map[string]any{}, fmt.Sprintf("%s removed an attachment from %s", actor, p.taskRef(payload)), meta
 
 	case "webhook.test":
 		msg, _ := payload["message"].(string)
-		return map[string]any{"message": msg}, msg
+		return map[string]any{"message": msg}, msg, meta
 
 	default:
-		return map[string]any{}, fmt.Sprintf("Paca event: %s", topic)
+		return map[string]any{}, fmt.Sprintf("Paca event: %s", topic), meta
 	}
 }
 
-// actorName resolves a display name for the activity's actor. The ID space
-// in payload["actor_id"] depends on topic: task-level activities record the
-// authenticated user's ID, while comment activities record the
-// project_members row ID instead — so the join differs by topic. An AI agent
-// actor is recorded separately in payload["actor_agent_id"].
-func (p *webhookPlugin) actorName(topic string, payload map[string]any) string {
+// resolveActor resolves a display name, ID, and type ("user" or "agent") for
+// the activity's actor. The ID space in payload["actor_id"] depends on
+// topic: task-level activities record the authenticated user's ID, while
+// comment activities record the project_members row ID instead — so the
+// join differs by topic. An AI agent actor is recorded separately in
+// payload["actor_agent_id"]. Returns actorType "" when the event has no
+// resolvable actor at all (id and name fall back to "" and "Someone").
+func (p *webhookPlugin) resolveActor(topic string, payload map[string]any) (name, id, actorType string) {
 	if agentID, ok := payload["actor_agent_id"].(string); ok && agentID != "" {
-		if name := p.lookupName(`SELECT name FROM agents WHERE id = $1`, agentID); name != "" {
-			return name
+		name = p.lookupName(`SELECT name FROM agents WHERE id = $1`, agentID)
+		if name == "" {
+			name = "An agent"
 		}
-		return "An agent"
+		return name, agentID, "agent"
 	}
 	actorID, _ := payload["actor_id"].(string)
 	if actorID == "" {
-		return "Someone"
+		return "Someone", "", ""
 	}
 
-	var name string
 	switch topic {
 	case "task.comment.added", "task.comment.updated", "task.comment.deleted", "comment":
 		name = p.lookupName(
@@ -617,9 +636,9 @@ func (p *webhookPlugin) actorName(topic string, payload map[string]any) string {
 		name = p.lookupName(`SELECT full_name AS name FROM users WHERE id = $1`, actorID)
 	}
 	if name == "" {
-		return "Someone"
+		name = "Someone"
 	}
-	return name
+	return name, actorID, "user"
 }
 
 // lookupName runs a single-row, single-column ("name") query and returns its
@@ -654,6 +673,23 @@ func (p *webhookPlugin) taskRef(payload map[string]any) string {
 		return fmt.Sprintf("task %s %q", alias, title)
 	}
 	return fmt.Sprintf("task %q", title)
+}
+
+// taskAliasForPayload resolves the task's human-readable alias (e.g.
+// "ABC-123") for the delivery payload's structured "task_alias" field,
+// returning "" when the event has no task_id or the project has no
+// task_id_prefix configured.
+func (p *webhookPlugin) taskAliasForPayload(payload map[string]any) string {
+	taskID, _ := payload["task_id"].(string)
+	if taskID == "" {
+		return ""
+	}
+	result, err := p.db.Query(`SELECT task_number, project_id FROM tasks WHERE id = $1`, taskID)
+	if err != nil || len(result.Rows) == 0 {
+		return ""
+	}
+	sc := newRowScanner(result.Columns, result.Rows[0])
+	return p.taskAlias(sc.str("project_id"), sc.intVal("task_number"))
 }
 
 // taskAlias formats a task's human-readable alias (e.g. "ABC-123") from its
@@ -758,7 +794,7 @@ func (p *webhookPlugin) deliver(sc *scanner, eventType string, payload map[strin
 	webhookID := sc.str("id")
 	targetURL := sc.str("url")
 
-	data, text := p.buildEventData(eventType, payload)
+	data, text, meta := p.buildEventData(eventType, payload)
 	if pname := p.projectName(payload); pname != "" {
 		data["project_name"] = pname
 		text = fmt.Sprintf("[%s] %s", pname, text)
@@ -767,13 +803,22 @@ func (p *webhookPlugin) deliver(sc *scanner, eventType string, payload map[strin
 		data["url"] = url
 		text = text + " - " + url
 	}
+	actor := map[string]any{"name": meta.ActorName}
+	if meta.ActorID != "" {
+		actor["id"] = meta.ActorID
+	}
+	if meta.ActorType != "" {
+		actor["type"] = meta.ActorType
+	}
 	body, _ := json.Marshal(map[string]any{
 		"event":       eventType,
 		"webhook_id":  webhookID,
 		"text":        text,
 		"task_id":     payload["task_id"],
+		"task_alias":  meta.TaskAlias,
 		"project_id":  payload["project_id"],
 		"actor_id":    payload["actor_id"],
+		"actor":       actor,
 		"occurred_at": payload["created_at"],
 		"data":        data,
 		"sent_at":     nowStr(),
