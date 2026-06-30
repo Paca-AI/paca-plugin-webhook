@@ -224,9 +224,12 @@ func TestTaskRefAndProjectNameInSummaryText(t *testing.T) {
 		t.Fatalf("projectName = %q, want %q", got, want)
 	}
 
-	_, text := p.buildEventData("task.deleted", payload)
+	_, text, meta := p.buildEventData("task.deleted", payload)
 	if want := `Someone deleted task ABC-123 "Fix login bug"`; text != want {
 		t.Fatalf("buildEventData text = %q, want %q", text, want)
+	}
+	if meta.TaskAlias != "ABC-123" {
+		t.Fatalf("buildEventData meta.TaskAlias = %q, want %q", meta.TaskAlias, "ABC-123")
 	}
 
 	// A project with no task_id_prefix configured falls back to no alias.
