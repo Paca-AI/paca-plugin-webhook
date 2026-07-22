@@ -7,6 +7,9 @@
   "backend": {
     "allowedConfigKeys": ["ENCRYPTION_KEY", "PUBLIC_URL"],
     "allowedOutboundDomains": ["*"],
+    "sensitiveFields": {
+      "webhooks": ["secret_enc"]
+    },
     "eventSubscriptions": [
       "task.created",
       "task.updated",
