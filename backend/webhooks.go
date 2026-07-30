@@ -843,12 +843,14 @@ func (p *webhookPlugin) deliver(sc *scanner, eventType string, payload map[strin
 	}
 	if err != nil {
 		d.Error = err.Error()
+		p.log.Warn(fmt.Sprintf("webhook: delivery failed: webhook_id=%s event=%s url=%s error=%s", webhookID, eventType, targetURL, err.Error()))
 	} else {
 		d.StatusCode = resp.Status
 		d.Success = resp.Status >= 200 && resp.Status < 300
 		if !d.Success {
 			d.Error = fmt.Sprintf("unexpected status %d", resp.Status)
 		}
+		p.log.Info(fmt.Sprintf("webhook: delivery attempt: webhook_id=%s event=%s url=%s status=%d success=%t", webhookID, eventType, targetURL, resp.Status, d.Success))
 	}
 
 	inserted, insErr := p.db.Query(
