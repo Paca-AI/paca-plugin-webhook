@@ -184,12 +184,12 @@ func (p *webhookPlugin) listWebhooks(req *plugin.Request, res *plugin.Response) 
 func (p *webhookPlugin) createWebhook(req *plugin.Request, res *plugin.Response) {
 	projectID := req.PathParam("projectId")
 
-	type body struct {
+	type createWebhookBody struct {
 		URL    string   `json:"url"`
 		Secret string   `json:"secret"`
 		Events []string `json:"events"`
 	}
-	b, err := plugin.JSONBody[body](req)
+	b, err := plugin.JSONBody[createWebhookBody](req)
 	if err != nil {
 		apiError(res, 400, "BAD_REQUEST", "invalid request body")
 		return
@@ -262,13 +262,13 @@ func (p *webhookPlugin) updateWebhook(req *plugin.Request, res *plugin.Response)
 		return
 	}
 
-	type body struct {
+	type updateWebhookBody struct {
 		URL     *string  `json:"url"`
 		Secret  *string  `json:"secret"`
 		Events  []string `json:"events"`
 		Enabled *bool    `json:"enabled"`
 	}
-	b, err := plugin.JSONBody[body](req)
+	b, err := plugin.JSONBody[updateWebhookBody](req)
 	if err != nil {
 		apiError(res, 400, "BAD_REQUEST", "invalid request body")
 		return
