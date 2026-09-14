@@ -2,9 +2,17 @@
   "id": "com.paca.webhook",
   "displayName": "Webhooks",
   "description": "Sends HTTP webhooks to a URL of your choice when task activity happens in a project.",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "minCoreVersion": "v0.13.3",
   "permissions": ["db.read", "db.write", "events.subscribe"],
+  "customPermissions": [
+    {
+      "key": "webhook.manage",
+      "label": "Manage webhooks",
+      "description": "View, create, edit, delete, and test outgoing webhooks for this project.",
+      "scope": "project"
+    }
+  ],
   "backend": {
     "allowedConfigKeys": ["ENCRYPTION_KEY", "PUBLIC_URL"],
     "allowedOutboundDomains": ["*"],
@@ -35,7 +43,7 @@
           {
             "name": "requirePermissions",
             "scope": "project",
-            "permissions": ["projects.read"]
+            "permissions": ["webhook.manage"]
           }
         ]
       },
@@ -48,7 +56,7 @@
           {
             "name": "requirePermissions",
             "scope": "project",
-            "permissions": ["projects.write"]
+            "permissions": ["webhook.manage"]
           }
         ]
       },
@@ -61,7 +69,7 @@
           {
             "name": "requirePermissions",
             "scope": "project",
-            "permissions": ["projects.read"]
+            "permissions": ["webhook.manage"]
           }
         ]
       },
@@ -74,7 +82,7 @@
           {
             "name": "requirePermissions",
             "scope": "project",
-            "permissions": ["projects.write"]
+            "permissions": ["webhook.manage"]
           }
         ]
       },
@@ -87,7 +95,7 @@
           {
             "name": "requirePermissions",
             "scope": "project",
-            "permissions": ["projects.write"]
+            "permissions": ["webhook.manage"]
           }
         ]
       },
@@ -100,7 +108,7 @@
           {
             "name": "requirePermissions",
             "scope": "project",
-            "permissions": ["projects.read"]
+            "permissions": ["webhook.manage"]
           }
         ]
       },
@@ -113,7 +121,7 @@
           {
             "name": "requirePermissions",
             "scope": "project",
-            "permissions": ["projects.write"]
+            "permissions": ["webhook.manage"]
           }
         ]
       }
@@ -126,7 +134,8 @@
         "point": "project.settings.tab",
         "component": "WebhookSettingsTab",
         "label": "Webhooks",
-        "order": 110
+        "order": 110,
+        "requiredPermission": "webhook.manage"
       }
     ]
   }
