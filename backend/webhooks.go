@@ -615,7 +615,7 @@ func (p *webhookPlugin) buildEventData(topic string, payload map[string]any) (ma
 // resolvable actor at all (id and name fall back to "" and "Someone").
 func (p *webhookPlugin) resolveActor(topic string, payload map[string]any) (name, id, actorType string) {
 	if agentID, ok := payload["actor_agent_id"].(string); ok && agentID != "" {
-		name = p.lookupName(`SELECT name FROM agents WHERE id = $1`, agentID)
+		name = p.lookupName(`SELECT name FROM accounts WHERE id = $1 AND kind = 'agent'`, agentID)
 		if name == "" {
 			name = "An agent"
 		}
@@ -629,11 +629,11 @@ func (p *webhookPlugin) resolveActor(topic string, payload map[string]any) (name
 	switch topic {
 	case "task.comment.added", "task.comment.updated", "task.comment.deleted", "comment":
 		name = p.lookupName(
-			`SELECT u.full_name AS name FROM project_members pm JOIN users u ON u.id = pm.user_id WHERE pm.id = $1`,
+			`SELECT ac.name AS name FROM project_members pm JOIN accounts ac ON ac.id = pm.account_id WHERE pm.id = $1`,
 			actorID,
 		)
 	default:
-		name = p.lookupName(`SELECT full_name AS name FROM users WHERE id = $1`, actorID)
+		name = p.lookupName(`SELECT name FROM accounts WHERE id = $1`, actorID)
 	}
 	if name == "" {
 		name = "Someone"
